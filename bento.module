@@ -1,0 +1,1761 @@
+<?php
+
+require_once('simple_html_dom.php');
+require_once('nclive_summon_tools.php');
+require_once('nclive_url_tools.php');
+require_once('nclive_query_tools.php');
+require_once('nclive_string_tools.php');
+require_once('nclive_similarity_tools.php');
+
+module_load_include('inc', 'bento', '/magpierss/rss_fetch');
+module_load_include('inc', 'bento', 'api_credentials');
+
+// $Id$
+// HOOKS -----------------------------------------------------------------------
+
+/**
+ * Implementation of hook_menu().
+ */
+function bento_menu() {
+  $items['search_randall'] = array(
+    'title' => 'Search Randall Library',
+    'page callback' => 'bento_page_structure',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_catalog_books'] = array(
+    'page callback' => 'bento_catalog_books',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_catalog_journals'] = array(
+    'page callback' => 'bento_catalog_journals',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_catalog_videos'] = array(
+    'page callback' => 'bento_catalog_videos',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_news_magazine_articles'] = array(
+    'page callback' => 'bento_news_magazine_articles',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_news_magazine_articles_2'] = array(
+    'page callback' => 'bento_news_magazine_articles_2',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_scholarly_articles'] = array(
+    'page callback' => 'bento_scholarly_articles',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_scholarly_articles_2'] = array(
+    'page callback' => 'bento_scholarly_articles_2',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_databases'] = array(
+    'page callback' => 'bento_databases',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_lib_websites'] = array(
+    'page callback' => 'bento_lib_websites',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_oclc'] = array(
+    'page callback' => 'bento_oclc_search_api',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_log_query'] = array(
+    'page callback' => 'bento_log_query',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_gov_docs'] = array(
+    'page callback' => 'bento_gov_docs',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['touchkiosk/catalog'] = array(
+    'title' => 'Search Randall Library',
+    'page callback' => 'bento_kiosk_page_structure',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+
+  // TESTING LINKS
+
+  $items['bento_catalog_test'] = array(
+    'page callback' => 'bento_catalog_test',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_summon_test'] = array(
+    'page callback' => 'bento_summon_test',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['bento_test'] = array(
+    'page callback' => 'bento_test',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+// SEARCH PAGE -----------------------------------------------------------------
+
+function bento_page_structure() {
+  // Add javascript.
+  drupal_add_js(drupal_get_path('module', 'bento') . '/bento.js');
+  drupal_add_js(drupal_get_path('module', 'bento') . '/string.min.js');
+
+  $chat_uncw_address = "'http://libraryh3lp.com/chat/uncw@chat.libraryh3lp.com?skin=5326&amp;theme=gota&amp;title=Ask%20a%20UNCW%20Librarian&amp;identity=Ask%20a%20UNCW%20Librarian'";
+  $chat = "'chat'";
+  $chat_style1 = "'resizable=1,width=240,height=250'";
+  $chat_nc_knows_address = "'http://libraryh3lp.com/chat/nc-knows@chat.libraryh3lp.com?skin=681&amp;identity=NCknows&amp;sounds=true&amp;profile=nca-uncw'";
+  $chat_style2 = "'resizable=1,width=250,height=250'";
+  $system_pointer = "";
+
+  $display = '
+    <div id="bento-page">
+      <div id="bento-search-box">
+        <form id="bento-search-form" accept-charset="UTF-8">
+          <div class="homesearch" style="text-align:center">
+          <div class="selectlist"><select id="formatdropdown" name="limit">
+            <option selected="selected" value="all">All</option>
+            <option value="summon">Articles</option>
+            <option value="books">Books & eBooks</option>
+            <option value="journals">Journal Titles</option>
+            <option value="catalog">Library Catalog</option>
+          </select></div>
+          <input class="inputtext" id="bento-search" name="keyword" size="70" tabindex="1" type="text" value="Search for articles, books, videos, journals and more" />
+          <input alt="Go" class="submit" id="bento-search-button" name="wcsbtn2w" tabindex="2" title="Go" type="submit" value="Search" />&nbsp; &nbsp; &nbsp; &nbsp;&nbsp;
+          <a href="http://library.uncw.edu/guides/using_library_search"><img title="About this Search" src="' . $system_pointer . '/sites/all/modules/bento/images/icon.png" style="width: 31px; height: 31px; margin: -10px 0px;" /></a></div>
+          <div id="bento-article-options" class="bento-hidden">
+            <br><input type="checkbox" name="article-option" id="article-option" value="full-text"> Only show articles with full text online<br>
+          </div>
+          <div id="bento-catalog-options" class="bento-hidden">
+            <br>Search by: &nbsp;
+            <input type="radio" name="catalog-option" id="catalog-keyword" value="keyword"> Keyword
+            <input type="radio" name="catalog-option" id="catalog-title" value="title"> Title
+            <input type="radio" name="catalog-option" id="catalog-author" value="author"> Author
+            <input type="radio" name="catalog-option" id="catalog-journal" value="journal"> Journal Title
+            <br>
+          </div>
+        </form>
+      </div>
+    <div id="bento-instructions">
+      <p>Welcome to the Randall Library\'s new search tool.</p>
+      <p>Put your search terms in the box above and try it out!</p>
+      <p>Want to learn more about it? Visit <a href="http://library.uncw.edu/guides/using_library_search" target="_blank">
+      Using the Library Search.</a></p>
+    </div>
+    <div id="bento-links" class="bento-hidden">
+      <ul>
+        <li>Jump to:</li>
+        <li><a href="#bento-results-scholarly-articles">Scholarly Articles</a></li>
+        <li><a href="#bento-results-news-articles">News & Magazine Articles</a></li>
+        <li><a href="#bento-results-databases">Databases</a></li>
+        <li><a href="#bento-results-gov-docs">Government Documents</a></li>
+        <li><a href="#bento-results-books">Books & eBooks</a></li>
+        <li><a href="#bento-results-videos">Videos & Music</a></li>
+        <li><a href="#bento-results-journals">Journals, Magazines & Newspapers by Title</a></li>
+        <li><a href="#bento-results-websites">Library Websites & Digital Collections</a></li>
+        <li><a href="#bento-results-other-searches">More Library Collections</a></li>
+        <li><a href="#bento-help-links">Help</a></li>
+      </ul>
+    </div>
+
+
+
+    <div id="bento-results">' .
+    //
+    // COLUMN 1
+    //
+
+      '<div class="bento-results-col bento-results-col1"> ' .
+//        <div id ="bento-results-best-bets" class="bento-results">
+//          <div class="bento-results-header">
+//            <h5>Best Bets</h5>
+//          </div>
+//          <div class="bento-results-content bento-results-content-best-bets">
+//          </div>
+//        </div>
+
+    '
+        <div id ="bento-results-scholarly-articles" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Scholarly Articles</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-scholarly-articles bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+          <div class="bento-results-footer-line2">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+          </div>
+        </div>
+
+        <div id ="bento-results-news-articles" class="bento-results">
+          <div class="bento-results-header">
+            <h5>News & Magazine Articles</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-news-articles bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+          <div class="bento-results-footer-line2">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+          </div>
+        </div>
+
+        <div id ="bento-results-databases" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Databases</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-databases bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+        </div>
+
+      </div>' .
+    //
+    //
+    //
+    // COLUMN 2
+    //
+
+
+      '<div class="bento-results-col bento-results-col2">
+
+        <div id ="bento-results-books" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Books & eBooks</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-books bento-results-columns bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+        </div>
+
+        <div id ="bento-results-videos" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Videos & Music</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-videos bento-results-columns bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+        </div>
+      </div>' .
+    //
+    //
+    //
+    // COLUMN 3
+    //
+
+      '<div class="bento-results-col bento-results-col3">
+
+      <div id ="bento-results-journals" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Journals, Magazines, & Newspapers by Title</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-journals bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-see-all"/>
+            <a class="bento-see-all-link" href="#" target="_blank"></a>
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+        </div>
+
+      <div id ="bento-results-websites" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Library Websites & Digital Collections</h5>
+          </div>
+          <div id="google-search" class="bento-results-content bento-results-content-websites">
+          </div>
+          <div class="bento-results-footer">
+            <img class="bento-more-options"/>
+            <a class="bento-more-options-link" href="#" target="_blank"></a>
+          </div>
+      </div>
+
+      <div id ="bento-results-gov-docs" class="bento-results">
+        <div class="bento-results-header">
+          <h5>Government Documents</h5>
+        </div>
+        <div class="bento-results-content bento-results-content-gov-docs bento-dynamic">
+          <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+        </div>
+        <div class="bento-results-footer">
+          <img class="bento-see-all"/>
+          <a class="bento-see-all-link" href="#" target="_blank"></a>
+          <img class="bento-more-options"/>
+          <a class="bento-more-options-link" href="#" target="_blank"></a>
+        </div>
+      </div>
+
+      <div id ="bento-results-other-searches" class="bento-results">
+          <div class="bento-results-header">
+            <h5>More Library Collections</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-other-searches">
+            <a class="beyd" href="#" target="_blank">Search beyond Randall Library (WorldCat)</a><br/><br/>
+            <a class="arch" href="http://library.uncw.edu/archives_special" target="_blank">Archives and Special Collections</a><br/><br/>
+            <a class="cmct" href="http://library.uncw.edu/cmc" target="_blank">Curriculum Materials Center</a>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <div id="bento-help-links">
+
+    <ul>
+      <li>Get Help:</li>
+      <li><a href="http://library.uncw.edu/forms/ask_librarian">Email Us</a></li>
+      <li>Call Us: Learning Commons Help Desk: 910-962-3760</li>
+      <li><span class="libraryh3lp" jid="uncw@chat.libraryh3lp.com" style=""><a href="#"
+          onclick="window.open(' . $chat_uncw_address . ',
+          ' . $chat . ', ' . $chat_style1 . '); return false;">Chat with Us (UNCW Librarian)</a></span> <span class="libraryh3lp" jid="nc-knows@chat.libraryh3lp.com" style="display: none;"><a href="#" onclick="window.open(' . $chat_nc_knows_address . ',
+          ' . $chat . ', ' . $chat_style2 . '); return false;">Chat with Us (NCKnows)</a></span></li>
+      <li><a href="/ask/in_person">In-Person Help</a></li>
+
+      <li><a href="http://library.uncw.edu/directory/liaisons">Find Your Librarian</a></li>
+      <li><a href="/citations">Citation &amp; Bibliography Help</a></li>
+      <li><a href="http://library.uncw.edu/get_started">Get Started Researching</a></li>
+      <li><a href="http://library.uncw.edu/ill">Interlibrary Loan</a></li>
+    </ul>
+    <script type="text/javascript" src="http://libraryh3lp.com/js/libraryh3lp.js?multi,poll"></script>
+  </div>
+
+  </div>
+  ';
+
+  return $display;
+}
+
+// AJAX CALLBACKS --------------------------------------------------------------
+
+function bento_log_query() {
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+  $search_terms = $_POST['searchTerms'];
+  $search_option = $_POST['searchOption'];
+  $nid = db_insert('bento_queries')
+	->fields(array(
+	'search_terms' => $search_terms,
+	'search_option' => $search_option,
+	))
+	->execute();
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_catalog_books() {
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+  $touchkiosk = false;
+  if (isset($_POST['touchkiosk'])) {
+    $touchkiosk = $_POST['touchkiosk'];
+  }
+  $search_parameters = 'D&m=a&m=c&m=h&b=wg&b=wj&b=wr&b=wf&b=wh&b=wb&b=wc&b=we&b=wi&b=wl&b=wn&b=ws&b=wu&b=wv&b=eb';
+  $media = 'books';
+  $results_count = 5;
+  if ($touchkiosk) {
+    $results_count = 4;
+	$search_parameters = 'D&m=a&m=c&m=h&b=wg&b=wj&b=wr&b=wf&b=wh&b=wb&b=wc&b=we&b=wi&b=wl&b=wn&b=ws&b=wu&b=wv';
+  }
+  $show_jackets = TRUE;
+  $result = _bento_catalog_search($media, $results_count, $show_jackets, $search_parameters, $touchkiosk);
+  // If no results found in our catalog, look for holdings at other libraries.
+  $resultsCount = $result['resultsCount'];
+  if (!$resultsCount) {
+    $display = _bento_oclc_search_api($_POST['searchTerms'], 'books');
+    $result = array('reply' => $display, 'resultsCount' => 'X');
+  }
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_catalog_journals() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $search_terms = $_POST['searchTerms'];
+  $safe_search_terms = str_replace(' ', '+', $search_terms);
+  $base = 'https://libcat.uncw.edu/search/?searchtype=j&searcharg=';
+  $html = file_get_html($base . $safe_search_terms);
+  $records = $html->find('.browseEntry');
+  $total_records = "0";
+
+//looking at the area that would say no matches found on a page
+  $no_matches_found = FALSE;
+  $messages = $html->find('.msg ');
+  foreach ($messages as $message) {
+    $nomatch_msg = $message->getElementsByTagName('td', 0)->plaintext;
+    if (strpos($nomatch_msg, 'No matches found') !== false) {
+      $result = array('reply' => 'No results found');
+      drupal_json_output($result);
+      module_invoke_all('exit');
+      exit;
+    }
+  }
+
+  // Get the total number of records.
+  $browse_header = $html->find('.browseHeaderData');
+  if (count($browse_header)) {
+    $browse_header_data = $browse_header[0] . '';
+    $browse_header_array = explode(' ', $browse_header_data);
+    $total_records = rtrim($browse_header_array[7], ')');
+  }
+
+// display search all link
+  $display = '';
+
+//starting counter to limit to 3 results
+  $i = 0;
+
+//looking through results
+  $record_found = FALSE;
+  foreach ($records as $record) {
+
+//break if you have already done 3 results
+    if (++$i == 4) {
+      break;
+    }
+
+    //title and link to first 3 results
+    $display .= '<div class="title"><a href="https://libcat.uncw.edu' .
+      $record->getElementsByTagName('a', 1)->href . '"><b>' .
+      $record->getElementsByTagName('a', 1)->plaintext;
+    $display .= "</b></div>";
+    $record_found = TRUE;
+  }
+
+//if there were no results that must mean you only had one result so look for that information
+  if (!$record_found) {
+    $records = $html->find('.bibDisplayTitle');
+    foreach ($records as $record) {
+      $title_j = $record->getElementsByTagName('td', 0)->plaintext;
+      $new_title_j = substr($title_j, 9, 999);
+
+      $display .= '<div class="title"><a href="' . $base . $safe_search_terms . '"><b>' . $new_title_j . '</b></a></div>';
+    }
+    $total_records = "1";
+  }
+  $result = array('reply' => $display, 'resultsCount' => $total_records);
+
+  // If no results, try the OCLC api.
+  $resultsCount = $result['resultsCount'];
+  if (!$resultsCount) {
+    $display = _bento_oclc_search_api($_POST['searchTerms'], 'journals');
+    $result = array('reply' => $display, 'resultsCount' => 'X');
+  }
+
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_catalog_videos() {
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+  $touchkiosk = false;
+  if (isset($_POST['touchkiosk'])) {
+    $touchkiosk = $_POST['touchkiosk'];
+  }
+
+  $search_parameters = 'D&m=g&b=wa&b=ev';
+  $media = 'videos';
+  $results_count = 5;
+  if ($touchkiosk) {
+    $results_count = 4;
+  }
+  $show_jackets = TRUE;
+  $result = _bento_catalog_search($media, $results_count, $show_jackets, $search_parameters, $touchkiosk);
+
+  // If no results, try the OCLC api.
+  $resultsCount = $result['resultsCount'];
+  if (!$resultsCount) {
+    $display = _bento_oclc_search_api($_POST['searchTerms'], 'videos');
+    $result = array('reply' => $display, 'resultsCount' => 'X');
+  }
+
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_scholarly_articles() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $search_terms = $_POST['searchTerms'];
+
+  // Add filters to the Summon database query.
+  $query = $search_terms . "&s.fvf=IsFullText,true,f&s.fvf=ContentType,Journal+Article,f&s.fvf=IsScholarly,true,f&s.role=authenticated";
+
+  // Query the Summon database and parse the results.
+  $offset = NULL;
+  $limit = NULL;
+  $sort = FALSE;
+  $doctype = 'xml';
+  $api_id = getCredentials('SUMMON__api_id');
+  $api_key = getCredentials('SUMMON__api_key');
+  $xml_summon_data = summon_tools__request($api_id, $api_key, $query, $offset, $limit, $sort, $doctype);
+  $parsed_summon_data = summon_tools__parse_xml("summon_articles", $xml_summon_data, $exact);
+
+  // Return the results.
+  $results = $parsed_summon_data["summon_articles"]["results"];
+  $results_count = $parsed_summon_data["count"];
+  $results_returned = array();
+  $results_returned["results"] = $results;
+  $results_returned["resultsCount"] = $results_count;
+  drupal_json_output($results_returned);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_scholarly_articles_2() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $search_terms = $_POST['searchTerms'];
+
+  // Add filters to the Summon database query.
+  $query = $search_terms . "&s.fvf=ContentType,Journal+Article&s.fvf=IsScholarly,true,f&s.role=authenticated";
+
+  // Query the Summon database and parse the results.
+  $offset = NULL;
+  $limit = NULL;
+  $sort = FALSE;
+  $doctype = 'xml';
+  $api_id = getCredentials('SUMMON__api_id');
+  $api_key = getCredentials('SUMMON__api_key');
+  $xml_summon_data = summon_tools__request($api_id, $api_key, $query, $offset, $limit, $sort, $doctype);
+  $parsed_summon_data = summon_tools__parse_xml("summon_articles", $xml_summon_data, $exact);
+
+  // Return the results.
+  $results = $parsed_summon_data["summon_articles"]["results"];
+  $results_count = $parsed_summon_data["count"];
+  $results_returned = array();
+  $results_returned["resultsCount"] = $results_count;
+  drupal_json_output($results_returned);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_news_magazine_articles() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $search_terms = $_POST['searchTerms'];
+
+  // Add filters to the Summon database query.
+  $query = $search_terms . "&s.fvf=IsFullText,true,f&s.fvf=ContentType,Newspaper+Article&s.fvf=ContentType,Magazine+Article&s.role=authenticated";
+
+  // Query the Summon database and parse the results.
+  $offset = NULL;
+  $limit = NULL;
+  $sort = FALSE;
+  $doctype = 'xml';
+  $api_id = getCredentials('SUMMON__api_id');
+  $api_key = getCredentials('SUMMON__api_key');
+  $xml_summon_data = summon_tools__request($api_id, $api_key, $query, $offset, $limit, $sort, $doctype);
+  $parsed_summon_data = summon_tools__parse_xml("summon_news", $xml_summon_data, $exact);
+
+  // Return the results.
+  $results = $parsed_summon_data["summon_news"]["results"];
+  $results_count = $parsed_summon_data["count"];
+  $results_returned = array();
+  $results_returned["results"] = $results;
+  $results_returned["resultsCount"] = $results_count;
+  drupal_json_output($results_returned);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_news_magazine_articles_2() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $search_terms = $_POST['searchTerms'];
+
+  // Add filters to the Summon database query.
+  $query = $search_terms . "&s.fvf=ContentType,Newspaper+Article&s.fvf=ContentType,Magazine+Article&s.role=authenticated";
+
+  // Query the Summon database and parse the results.
+  $offset = NULL;
+  $limit = NULL;
+  $sort = FALSE;
+  $doctype = 'xml';
+  $api_id = getCredentials('SUMMON__api_id');
+  $api_key = getCredentials('SUMMON__api_key');
+  $xml_summon_data = summon_tools__request($api_id, $api_key, $query, $offset, $limit, $sort, $doctype);
+  $parsed_summon_data = summon_tools__parse_xml("summon_news", $xml_summon_data, $exact);
+
+  // Return the results.
+  $results = $parsed_summon_data["summon_news"]["results"];
+  $results_count = $parsed_summon_data["count"];
+  $results_returned = array();
+  $results_returned["resultsCount"] = $results_count;
+  drupal_json_output($results_returned);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_databases() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $display = '';
+  $matches_found = FALSE;
+  $search_terms = $_POST['searchTerms'];
+  $search_terms = str_replace(array('\'', '"'), '', $search_terms);
+  $search_terms = str_replace(' ', '+', $search_terms);
+  $results_count = "0";
+
+  $url = 'https://library.uncw.edu/search/node/' . $search_terms . '%20type%3Aresource_page';
+  $html = file_get_html($url);
+  // Get the total number of results.
+  //$browse_header = $html->find('.faceted-search-numbering');
+  //if (count($browse_header)) {
+  //  $browse_header_data = $browse_header[0] . '';
+  //  $browse_header_array = explode(' ', $browse_header_data);
+  //  $results_count = rtrim($browse_header_array[6], '</div>');
+  //}
+  // Get the list of databases.
+  $results = $html->find('h3.title a');
+  $x = 0;
+
+  foreach ($results as $result) {
+    $matches_found = TRUE;
+    $x++;
+    if ($x > 5)
+      break;
+    $display .= '<a href="' . $result->href . '" target="_blank"><b>' . $result->plaintext . '</b></a></br></br>';
+  }
+
+  if (!$matches_found) {
+    $display = 'No results found';
+  }
+
+  $result = array('reply' => $display, 'resultsCount' => $results_count);
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_lib_websites() {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $display = '';
+  $matches_found = FALSE;
+  $search_terms = $_POST['searchTerms'];
+  $search_terms = str_replace(array('\'', '"'), '', $search_terms);
+  $search_terms = str_replace(' ', '%20', $search_terms);
+  $results_count = "0";
+
+  $url = 'http://library.uncw.edu/search/node/"' . $search_terms . '"';
+  $html = file_get_html($url);
+  $links = $html->find('dt');
+  $details = $html->find('dd');
+
+  // Estimate the number of records found based on pages available.
+
+  $pager_last = $html->find('.pager-last');
+  if (count($pager_last)) {
+    $pager_last_data = $pager_last[0] . '';
+    $pager_last_array = explode(' ', $pager_last_data);
+    $pager_last_string = rtrim($pager_last_array[3], '"');
+    $strpos = strpos($pager_last_string, "page=");
+    $count = substr($pager_last_string, $strpos + 5);
+    $int_count = intval($count);
+    $estimated_count = ($int_count + 1) * 10;
+    $results_count = strval($estimated_count);
+  }
+  else {
+    $count = count($links);
+    $results_count = strval($count);
+  }
+
+
+  $x = 0;
+  foreach ($links as $link) {
+    $matches_found = TRUE;
+    $x++;
+    if ($x > 5)
+      break;
+    $display .= '<b>' . $link . '</b>';
+    $detail = $details[$x - 1];
+    $snippets = $detail->find('p');
+    $snippet = '<span class="snippet">' . $snippets[0] . '</span>';
+    $display .= $snippet;
+  }
+
+  if (!$matches_found) {
+    $display = 'No results found';
+  }
+
+  $result = array('reply' => $display, 'resultsCount' => $results_count,
+//    '$count' => $count,
+//    '$pager_last_string' => $pager_last_string, '$search_terms' => $search_terms,
+  );
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_oclc_search_api() {
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+  if (empty($_POST['media'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+  $search_terms = ($_POST['searchTerms']);
+  $media = ($_POST['media']);
+  $display = _bento_oclc_search_api($search_terms, $media);
+
+  $result = array('reply' => $display, 'resultsCount' => 'X');
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_gov_docs() {
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+  $touchkiosk = false;
+  if (isset($_POST['touchkiosk'])) {
+    $touchkiosk = $_POST['touchkiosk'];
+  }
+  //$single_item_page_found = true;
+  $total_records = "X";
+  $results_count = 5;
+  if ($touchkiosk) {
+    $results_count = 4;
+  }
+  $details = array();
+  $short_base = 'http://libcat.uncw.edu';
+  $search_terms = rawurlencode($_POST['searchTerms']);
+  $search_query_url = 'http://libcat.uncw.edu/search~S4/X?SEARCH=(' . $search_terms . ')&SORT=D&b=wd';
+  $html = file_get_html($search_query_url);
+
+  // Screen scrape pages with multiple records.
+  $records = $html->find('.briefcitDetail');
+  if ($records) {
+    $j = 0;
+    $total_records = (string) count($records);
+    foreach ($records as $record) {
+      if (++$j == ($results_count + 1)) {
+        break;
+      }
+      $detail = array();
+      $detail['record_additional_items'] = FALSE;
+      $detail['record_url'] = $record->getElementsByTagName('a', 0)->href;
+      $detail['record_title'] = $record->getElementsByTagName('a', 0)->plaintext;
+      $detail['author'] = _bento_parse_author_publisher($record);
+      $detail['record_elements'] = $record->find('.bibItemsEntry td');
+      $detail['record_elements_count'] = count($detail['record_elements']);
+      if ($detail['record_elements_count'] > 0) {
+        $data = $record->getElementsByTagName('td', 0)->plaintext;
+        $detail['record_collection'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 0)->href;
+        $detail['record_collection_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 1)->plaintext;
+        $detail['record_call_number'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 1)->href;
+        $detail['record_call_number_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 2)->plaintext;
+        $detail['record_availability'] = _bento_clean_string($data);
+      }
+      if ($detail['record_elements_count'] > 3) {
+        $data = $record->getElementsByTagName('td', 3)->plaintext;
+        $detail['record_item2_collection'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 0)->href;
+        $detail['record_item2_collection_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 4)->plaintext;
+        $detail['record_item2_call_number'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 1)->href;
+        $detail['record_item2_call_number_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 5)->plaintext;
+        $detail['record_item2_availability'] = _bento_clean_string($data);
+      }
+      if ($detail['record_elements_count'] > 6) {
+        $detail['record_additional_items'] = TRUE;
+      }
+
+      $details[] = $detail;
+    }
+
+    // Get the total number of records found.
+    $browse_header = $html->find('.browseHeader');
+    if (count($browse_header)) {
+      $browse_header_data = $browse_header[0] . '';
+      $browse_header_array = explode(' ', $browse_header_data);
+      $total_records = rtrim($browse_header_array[9], ')');
+    }
+  }
+
+  // Screen scrape pages with only a single record.
+  $labels = $html->find('.bibInfoLabel');
+  //if ($single_item_page_found) {
+  if ($labels) {
+    // Figure out which detail lines contain the title and year.
+    $title_bib_info_line = 1;
+    $date_bib_info_line = 1;
+    $title_bib_info_line_found = FALSE;
+    $date_bib_info_line_found = FALSE;
+    $labels = $html->find('.bibInfoLabel');
+    for ($x = 0; $x < count($labels); $x++) {
+      $label = $labels[$x]->plaintext;
+      if ($label == 'Title') {
+        $title_bib_info_line = $x;
+        $title_bib_info_line_found = TRUE;
+      }
+      else if ($label == 'Publisher') {
+        $date_bib_info_line = $x;
+        $date_bib_info_line_found = TRUE;
+      }
+      if ($title_bib_info_line_found && $date_bib_info_line_found) {
+        break;
+      }
+    }
+
+    $details = array();
+    $detail = array();
+    $detail['record_additional_items'] = FALSE;
+    $urls = $html->find('.bibDisplayPermLink');
+    foreach ($urls as $url) {
+      $detail['record_url'] = ltrim($url->getElementsByTagName('a', 0)->href, '');
+    }
+    $bib_info_data = $html->find('.bibInfoData');
+    $title_and_author = $bib_info_data[$title_bib_info_line];
+    $title_and_author_array = _bento_title_and_author($title_and_author);
+    $title = $title_and_author_array['title'];
+    $author = $title_and_author_array['author'];
+    $detail['record_title'] = trim($title);
+    $detail['author'] = trim($author);
+
+    $bib_items = $html->find('.bibDisplayItemsMain');
+    $bib_item = $bib_items[0];
+    $bib_items_count = substr_count($bib_item, 'bibItemsEntry');
+    $detail['record_elements_count'] = $bib_items_count * 3;
+    if ($bib_items_count > 0) {
+      $data = $bib_item->getElementsByTagName('td', 0)->plaintext;
+      $detail['record_collection'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 0)->href;
+      $detail['record_collection_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 1)->plaintext;
+      $detail['record_call_number'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 1)->href;
+      $detail['record_call_number_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 2)->plaintext;
+      $detail['record_availability'] = _bento_clean_string($data);
+    }
+
+    if ($bib_items_count > 1) {
+      $data = $bib_item->getElementsByTagName('td', 3)->plaintext;
+      $detail['record_item2_collection'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 3)->href;
+      $detail['record_item2_collection_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 4)->plaintext;
+      $detail['record_item2_call_number'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 4)->href;
+      $detail['record_item2_call_number_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 5)->plaintext;
+      $detail['record_item2_availability'] = _bento_clean_string($data);
+    }
+    if ($bib_items_count > 2) {
+      $detail['record_additional_items'] = TRUE;
+    }
+
+    $details[] = $detail;
+    $total_records = "1";
+  }
+
+  if ($total_records == 'X') {
+    $display = 'No results found';
+    goto build_results;
+  }
+
+  $display = '';
+  $j = 0;
+  foreach ($details as $detail) {
+    // Title.
+    $detail_display = '<div class="bento-catalog-detail">';
+    $detail_display .= '<div class="title">';
+    if (!$touchkiosk) {
+      $detail_display .= '<a href="' . $short_base . $detail['record_url'] . '" target="_blank">';
+    }
+    $detail_display .= '<b>' . $detail['record_title'] . '</b>';
+    if (!$touchkiosk) {
+      $detail_display .='</a>';
+    }
+    $detail_display .= '<br /></div>';
+    // Author.
+    if ($detail['author']) {
+      $detail_display .= '<div>' .  $detail['author'] . '</div>';
+    }
+    // Collection (first line).
+    $detail_display .= '<div class="bento-catalog-detail-sources">';
+    if ((isset($detail['record_collection']))  && (isset($detail['record_collection_url']))) {
+      $detail_display .= '<div class="collection">';
+      if (!$touchkiosk) {
+        $detail_display .= '<a href="' . $short_base . $detail['record_collection_url'] . '" target="_blank" title="Click for Map">';
+      }
+      $detail_display .=  $detail['record_collection'];
+      if (!$touchkiosk) {
+        $detail_display .=  '</a>';
+      }
+      $detail_display .= '</div>';
+    }
+    // Call number (first line).
+    if (isset($detail['record_call_number'])) {
+      $detail_display .= '<div class="call_number">' . $detail['record_call_number'] . '</div>';
+    }
+    // Availability (first line).
+    if (isset($detail['record_availability'])) {
+      $detail_display .= '<div class="availability">' . $detail['record_availability'] . '</div>';
+    }
+
+    // Second detail line.
+    if ((isset($detail['record_item2_collection']))  && (isset($detail['record_item2_collection_url']))) {
+      // Collection (second line).
+      $detail_display .= '<br /><div class="second_collection">';
+      if (!$touchkiosk) {
+        $detail_display .= '<a href="' . $short_base . $detail['record_item2_collection_url'] . '" target="_blank" title="Click for Map">';
+      }
+      $detail_display .= $detail['record_item2_collection'];
+      if (!$touchkiosk) {
+        $detail_display .= '</a>';
+      }
+      $detail_display .= '</div>';
+    }
+
+    // Call number (second line).
+    if (isset($detail['record_item2_call_number'])) {
+      $detail_display .= '<div class="call_number">' . $detail['record_item2_call_number'] . '</div>';
+    }
+
+    // Availability (second line).
+    if (isset($detail['record_item2_availability'])) {
+      $detail_display .= '<div class="availability">' . $detail['record_item2_availability'] . '</div>';
+    }
+
+    // Additional items exist.
+    if (($detail['record_elements_count'] > 6)  && (!$touchkiosk)) {
+      $detail_display .= '<div class="additional"><a href="' . $short_base . $detail['record_url'] . '" target="_blank">See additional items</a></div>';
+    }
+    $detail_display .= '<br /></div></div>';
+    $display .= $detail_display;
+  }
+
+  build_results:
+  $result = array('reply' => $display, 'resultsCount' => $total_records);
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+// MISCELLANEOUS UTILITY FUNCTIONS ---------------------------------------------
+
+/**
+ *
+ * Search the Randall Library catalog and screen scrape the returned page
+ * to obtain a list of resources to be included in the bento box display.
+ *
+ */
+function _bento_catalog_search($media, $results_count, $show_jackets, $search_parameters, $touchkiosk) {
+
+  if (empty($_POST['searchTerms'])) {
+    module_invoke_all('exit');
+    exit;
+  }
+
+  $search_terms = $_POST['searchTerms'];
+  $search_terms = urlencode($search_terms);
+  $single_item_page_found = FALSE;
+  $multiple_item_page_found = FALSE;
+  $jacket_images = array();
+  $details = array();
+  $total_records = "0";
+
+  //putting the seqarch term between two strings new_base and add_base to construct search limiting by material type and collection
+  $new_base = 'http://libcat.uncw.edu/search/X?SEARCH=(';
+  $add_base = ')&searchscope=4&SORT=' . $search_parameters;
+  $short_base = 'http://libcat.uncw.edu';
+
+  // Get the catalog search result page for the search terms entered.
+  $html = file_get_html($new_base . $search_terms . $add_base);
+
+// Get the jackets for the items on the catalog search results page.
+
+  if ($show_jackets) {
+    $jacket_html_items = $html->find('.briefcitJacket');
+    if (count($jacket_html_items)) {
+      // A catalog page with multiple items has been found.
+      $multiple_item_page_found = TRUE;
+      $j = 0;
+      foreach ($jacket_html_items as $jacket_html_item) {
+        if (++$j == ($results_count + 1)) {
+          break;
+        }
+        $jacket_img = $jacket_html_item->getElementsByTagName('img', 0)->src;
+        if ($jacket_img) {
+          $jacket_images[] = $jacket_img;
+        }
+        else {
+          $jacket_images[] = 'http://library.uncw.edu/sites/all/modules/bento/images/image.png';
+        }
+      }
+    }
+    else {
+      // A catalog page with multiple items was not found.
+      $jackets = $html->find('.bibDisplayJacket');
+      if (count($jackets)) {
+        // A catalog page with a single item was found.
+        $single_item_page_found = TRUE;
+        foreach ($jackets as $jacket) {
+          //$jacket_img = $jacket_html_item->getElementsByTagName('img', 0)->src;
+          $jacket_img = $jacket->getElementsByTagName('img', 0)->src;
+          if ($jacket_img) {
+            $jacket_images[] = $jacket_img;
+          }
+          else {
+            $jacket_images[] = 'http://library.uncw.edu/sites/all/modules/bento/images/image.png';
+          }
+        }
+      }
+    }
+  }
+
+// A catalog page with multiple items was found.  Get the item details.
+
+  if ($multiple_item_page_found) {
+    // Get the total number of records found.
+    $browse_header = $html->find('.browseHeader');
+    if (count($browse_header)) {
+      $browse_header_data = $browse_header[0] . '';
+      $browse_header_array = explode(' ', $browse_header_data);
+      $total_records = rtrim($browse_header_array[9], ')');
+    }
+
+    $records = $html->find('.briefcitDetail ');
+    $j = 0;
+    foreach ($records as $record) {
+      if (++$j == ($results_count + 1)) {
+        break;
+      }
+      $detail = array();
+      $detail['record_additional_items'] = FALSE;
+      $detail['record_url'] = $record->getElementsByTagName('a', 0)->href;
+      $detail['record_title'] = $record->getElementsByTagName('a', 0)->plaintext;
+      $detail['record_elements'] = $record->find('.bibItemsEntry td');
+      $detail['record_elements_count'] = count($detail['record_elements']);
+      if ($detail['record_elements_count'] > 0) {
+        $data = $record->getElementsByTagName('td', 0)->plaintext;
+        $detail['record_collection'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 0)->href;
+        $detail['record_collection_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 1)->plaintext;
+        $detail['record_call_number'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 1)->href;
+        $detail['record_call_number_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 2)->plaintext;
+        $detail['record_availability'] = _bento_clean_string($data);
+      }
+      if ($detail['record_elements_count'] > 3) {
+        $data = $record->getElementsByTagName('td', 3)->plaintext;
+        $detail['record_item2_collection'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 0)->href;
+        $detail['record_item2_collection_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 4)->plaintext;
+        $detail['record_item2_call_number'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td a', 1)->href;
+        $detail['record_item2_call_number_url'] = _bento_clean_string($data);
+        $data = $record->getElementsByTagName('td', 5)->plaintext;
+        $detail['record_item2_availability'] = _bento_clean_string($data);
+      }
+      if ($detail['record_elements_count'] > 6) {
+        $detail['record_additional_items'] = TRUE;
+      }
+
+      // if this is a book or ebook, get the author.
+
+      if ($media == 'books') {
+        $author = '';
+        $character = '';
+        $first_break_found = FALSE;
+        $text = $record->innertext;
+        $text_length = strlen($text);
+
+        for ($x = 0; $x < $text_length; $x++) {
+          $check_for_break = substr($text, $x, 3);
+          // If second break found, done looking for author.
+          if ($first_break_found) {
+            if ($check_for_break == '<br') {
+              break;
+            }
+          }
+          // If first break not found, look for it.
+          if (!$first_break_found) {
+            if ($check_for_break == '<br') {
+              $first_break_found = TRUE;
+              $check_for_break5 = substr($text, $x, 5);
+              $check_for_break4 = substr($text, $x, 4);
+              if ($check_for_break5 == '<br >') {
+                $x = $x + 4;
+              }
+              else if ($check_for_break4 == '<br>') {
+                $x = $x + 3;
+              }
+              continue;
+            }
+          }
+          // If first break has been found, and we're not at the second break,
+          // move the current character to the author field.
+          if ($first_break_found) {
+            $character = substr($text, $x, 1);
+            $author .= $character;
+          }
+        }
+        if ($author) {
+          $detail['author'] = $author;
+        }
+      }
+
+      $details[] = $detail;
+    }
+  }
+
+  // A catalog page with a single item was found.  Get the item details.
+
+  if ($single_item_page_found) {
+    // Figure out which detail lines contain the title and year.
+    $title_bib_info_line = 1;
+    $date_bib_info_line = 1;
+    $title_bib_info_line_found = FALSE;
+    $date_bib_info_line_found = FALSE;
+    $labels = $html->find('.bibInfoLabel');
+    for ($x = 0; $x < count($labels); $x++) {
+      $label = $labels[$x]->plaintext;
+      if ($label == 'Title') {
+        $title_bib_info_line = $x;
+        $title_bib_info_line_found = TRUE;
+      }
+      else if ($label == 'Publisher') {
+        $date_bib_info_line = $x;
+        $date_bib_info_line_found = TRUE;
+      }
+      if ($title_bib_info_line_found && $date_bib_info_line_found) {
+        break;
+      }
+    }
+
+    // Scrape the data from the page.
+    $detail = array();
+    $detail['record_additional_items'] = FALSE;
+    $urls = $html->find('.bibDisplayPermLink');
+    foreach ($urls as $url) {
+      $detail['record_url'] = ltrim($url->getElementsByTagName('a', 0)->href, '');
+    }
+    $bib_info_data = $html->find('.bibInfoData');
+    $title_and_author = $bib_info_data[$title_bib_info_line];
+    $title_and_author_array = _bento_title_and_author($title_and_author);
+    $title = $title_and_author_array['title'];
+    $author = $title_and_author_array['author'];
+    $detail['record_title'] = trim($title);
+    $detail['author'] = trim($author);
+    if ($media != 'journals') {
+      $date_data = $bib_info_data[$date_bib_info_line];
+    }
+    $bib_items = $html->find('.bibDisplayItemsMain');
+    $bib_items_count = count($bib_items);
+    if ($bib_items_count > 0) {
+      $bib_item = $bib_items[0];
+      $data = $bib_item->getElementsByTagName('td', 0)->plaintext;
+      $detail['record_collection'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 0)->href;
+      $detail['record_collection_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 1)->plaintext;
+      $detail['record_call_number'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 1)->href;
+      $detail['record_call_number_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 2)->plaintext;
+      $detail['record_availability'] = _bento_clean_string($data);
+    }
+    if ($bib_items_count > 1) {
+      $bib_item = $bib_items[1];
+      $data = $bib_item->getElementsByTagName('td', 0)->plaintext;
+      $detail['record_collection'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 0)->href;
+      $detail['record_collection_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 1)->plaintext;
+      $detail['record_call_number'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td a', 1)->href;
+      $detail['record_call_number_url'] = _bento_clean_string($data);
+      $data = $bib_item->getElementsByTagName('td', 2)->plaintext;
+      $detail['record_availability'] = _bento_clean_string($data);
+    }
+    if ($bib_items_count > 2) {
+      $detail['record_additional_items'] = TRUE;
+    }
+    $details[] = $detail;
+    $total_records = "1";
+  }
+
+// Create the page display.
+
+  $display = '';
+  $j = 0;
+  foreach ($details as $detail) {
+    $detail_display = '<div class="bento-catalog-detail">';
+    // Title.
+    $detail_display .= '<div class="title">';
+    if (!$touchkiosk) {
+      $detail_display .= '<a href="' . $short_base . $detail['record_url'] . '" target="_blank">';
+    }
+    $detail_display .= '<b>' . $detail['record_title'] . '</b>';
+    if (!$touchkiosk) {
+      $detail_display .= '</a>';
+    }
+    $detail_display .= '</div>';
+    //  Author.
+    if (isset($detail['author'])) {
+      $detail_display .= '<div class="author">' . $detail['author'] . '</div>';
+    }
+    // Collection (first line).
+    $detail_display .= '<div class="bento-catalog-detail-sources">';
+    if ((isset($detail['record_collection']))  && (isset($detail['record_collection_url']))) {
+      $detail_display .= '<div class="collection">';
+      if (!$touchkiosk) {
+        $detail_display .= '<a href="' . $short_base . $detail['record_collection_url'] . '" target="_blank" title="Click for Map">';
+      }
+      $detail_display .=  $detail['record_collection'];
+      if (!$touchkiosk) {
+        $detail_display .=  '</a>';
+      }
+      $detail_display .= '</div>';
+    }
+    // Call number (first line).
+    if (isset($detail['record_call_number'])) {
+      $detail_display .= '<div class="call_number">' . $detail['record_call_number'] . '</div>';
+    }
+    // Availability (first line).
+    if (isset($detail['record_availability'])) {
+      $detail_display .= '<div class="availability">' . $detail['record_availability'] . '</div>';
+    }
+
+    // Second detail line.
+    if ((isset($detail['record_item2_collection']))  && (isset($detail['record_item2_collection_url']))) {
+      // Collection (second line).
+      $detail_display .= '<br /><div class="second_collection">';
+      if (!$touchkiosk) {
+        $detail_display .= '<a href="' . $short_base . $detail['record_item2_collection_url'] . '" target="_blank" title="Click for Map">';
+      }
+      $detail_display .= $detail['record_item2_collection'];
+      if (!$touchkiosk) {
+        $detail_display .= '</a>';
+      }
+      $detail_display .= '</div>';
+    }
+
+    // Call number (second line).
+    if (isset($detail['record_item2_call_number'])) {
+      $detail_display .= '<div class="call_number">' . $detail['record_item2_call_number'] . '</div>';
+    }
+
+    // Availability (second line).
+    if (isset($detail['record_item2_availability'])) {
+      $detail_display .= '<div class="availability">' . $detail['record_item2_availability'] . '</div>';
+    }
+
+    // Additional items exist.
+    if (($detail['record_elements_count'] > 6)  && (!$touchkiosk)) {
+      $detail_display .= '<div class="additional"><a href="' . $short_base . $detail['record_url'] . '" target="_blank">See additional items</a></div>';
+    }
+    $detail_display .= '</div></div>';
+    $item_display = '<div class="bento-result">';
+    if ($show_jackets) {
+      if ($jacket_images[$j]) {
+        $item_display .= '<div class="briefcitJacket">';
+        if (!$touchkiosk) {
+            $item_display .= '<a href="'
+            . $short_base . $detail['record_url']
+            . '" target="_blank">';
+        }
+        $item_display .=  '<img src="'. $jacket_images[$j] . '"/>';
+        if (!$touchkiosk) {
+          $item_display .= '</a>';
+        }
+        $item_display .= '</div>';
+      }
+    }
+    $item_display .= $detail_display . '</div>';
+    $display .= $item_display;
+    $j++;
+  }
+  if (!count($details)) {
+    $display = 'No results found';
+  }
+
+  $result = array('reply' => $display, 'resultsCount' => $total_records);
+  return $result;
+}
+
+/**
+ *
+ * Searches through the catalog book description string and extracts
+ * the year the book was published or copyrighted.
+ *
+ */
+function _bento_book_year($book_detail) {
+  $x = 0;
+  $rating_position = strpos($book_detail, 'Rating');
+  if ($rating_position === FALSE) {
+    $x = strlen($book_detail);
+  }
+  else {
+    $x = $rating_position;
+  }
+  $year_array = array();
+  while (($x > 0) && (count($year_array) < 4)) {
+    $x--;
+    $digit = substr($book_detail, $x, 1);
+    if (is_numeric($digit)) {
+      $year_array[] = $digit;
+    }
+  }
+  if (count($year_array) == 4) {
+    return $year_array[3] . $year_array[2] . $year_array[1] . $year_array[0];
+  }
+  else {
+    return FALSE;
+  }
+}
+
+function _bento_clean_string($string) {
+  $string1 = str_replace('&nbsp;', '', $string);
+  return trim($string1);
+}
+
+/**
+ *
+ * When no match for search terms is found in the library catalog,
+ * a second and possibly third search is made of resources available using the OCLC
+ * WorldCat Search API.
+ *
+ * The search terms as entered by the user are used in the first search of
+ * WorldCat.
+ *
+ * If there is still not a match, another search is made of WorldCat with a plus
+ * sign separating each search term.
+ *
+ * After OCLC returns a list of resources, that list
+ * has to be filtered to remove items that are not in the requested
+ * resource category, and also any items that are already in the
+ * Randall library catalog.
+ *
+ */
+ //qqq
+function _bento_oclc_search_api($search_terms, $category, $worldCatSearchType = 'equal') {
+
+  $url_parameters = '';
+
+  if ($category == 'books') {
+    //$formats = array('print', 'sound+recording', 'internet+resource');
+    $url_parameters = 'q=srw.dt+exact+%22bks%22+or+srw.dt+exact+%22url%22+and+srw.ti=%22';
+  }
+  elseif ($category == 'videos') {
+    $url_parameters = 'q=srw.dt+exact+%22vis%22+or+srw.dt+exact+%22sco%22+or+srw.dt+exact+%22rec%22+and+srw.ti+all+%22';
+  }
+  elseif ($category == 'journals') {
+    //$formats = array();
+  }
+
+  //key to the OCLC API
+  $wskey = getCredentials('OCLC__wskey');
+  $search_terms = urlencode($search_terms);
+  $search_terms = str_replace('%22', '', $search_terms);
+  $search_terms = str_replace('"', '', $search_terms);
+  $display_part1 = '<b>No results found in the UNCW library catalog. <br /> Additional results from other libraries: </b><br/ ><br />';
+  $display_part2 = '';
+
+// Limit results to 2 matches.
+  $oclc_matches = 0;
+
+// Call the OCLC Search API with our search terms.
+  $oclcurl = 'http://www.worldcat.org/webservices/catalog/search/worldcat/opensearch?' . $url_parameters . $search_terms . '%22&format=rss&wskey=' . $wskey . '&cformat=mla';
+
+// Use the MagpieRSS parser to turn the reply from OCLC into an object.
+  $rss = fetch_rss($oclcurl);
+
+// Take a look at each record returned by OCLC.
+  foreach ($rss->items as $item) {
+    if ($oclc_matches >= 2) {
+      break;
+    }
+
+    $holdings = FALSE;
+    $isbn = '';
+    $isbn1 = '';
+    $oclc = '';
+    $requested_format = FALSE;
+
+    // Get the isbn used below to find the copies of each book that are near us geographically.
+    if (isset($item['dc']['identifier'])) {
+      $isbn = $item['dc']['identifier'];
+    }
+    // Check to see if it is a 10 or 13 digit isbn.
+    if ($isbn) {
+      $isbn1 = substr($isbn, 9, 13);
+      if (substr($isbn1, 12, 1) == 'n') {
+        $isbn1 = substr($isbn, 9, 10);
+      }
+    }
+
+    // Get the OCLC number (unique identifier) for every record.
+
+    if (isset($item['oclcterms']['recordidentifier'])) {
+      $oclc = $item['oclcterms']['recordidentifier'];
+    }
+
+    // Create the url for where the holdings for this item can be accessed.
+    $oclc_url = 'http://www.worldcat.org/webservices/catalog/content/libraries/' . $oclc . '?location=28403&wskey=' . $wskey;
+
+    // Go to the page for that item of holdings in our area to check to see if we have it.
+    $html_oclc = file_get_html($oclc_url);
+    //Get holdings information.
+    $records_oclc = $html_oclc->find('institutionIdentifier');
+    foreach ($records_oclc as $record_oclc) {
+      $id = $record_oclc->getElementsByTagName('value', 0)->plaintext;
+      if ($id == 'NXW') {
+        $holdings = TRUE;
+      }
+    }
+    if ($holdings) {
+      continue;
+    }
+
+    // Convert the area on the page where the description details are into a string.
+    $description_decoded = (string) http_build_query($item['content']) . "\n";
+
+    // Title.
+    $title = $item['title'];
+
+    // Author.
+    $author_part = substr($description_decoded, 47, 999);
+    $author_period = strpos($author_part, '.') - 1;
+    $author = substr($author_part, 1, $author_period);
+    $author_display = urldecode($author);
+
+    // Publisher, place published, item type and date of publishing.
+    $rest_of_description = substr($description_decoded, $author_period + 49, 9999);
+    $rest_of_description_period = strpos($rest_of_description, '.') - 1;
+    $rest = substr($rest_of_description, 1, $rest_of_description_period);
+    $remainder_of_description = substr($rest_of_description, $rest_of_description_period + 2, 9999);
+
+    // See how many characters we are left with at this point so we can leave off some of the formatting.
+    $description_length = strlen($remainder_of_description);
+
+    // Take 13 characters off the end.
+    $publishing_details = urldecode(substr($remainder_of_description, 1, $description_length - 13));
+
+    // See if more needs to be taken off by whether or not there was a date.
+    if (substr($publishing_details, 0, 1) === ',') {
+      $publishing_details = urldecode(substr($remainder_of_description, 4, $description_length - 17));
+    }
+
+    // Extract the date from the publishing details.
+    $pub_date = '';
+    for ($q = 0; $q < strlen($publishing_details); $q++) {
+      $char = substr($publishing_details, $q, 1);
+      if (($char >= '0') && ($char <= '9')) {
+        $pub_date .= $char;
+      }
+      if (strlen($pub_date) == 4) {
+        break;
+      }
+    }
+
+    // Show a link to the book in Worldcat and details about the book.
+    $display_part2 .= '<div class="title"><a href="' . $item['link'] . '" target="_blank"><b>' . $title . '</b></a> </div>' .
+      '<div class="author">' . $author_display . '</div>' .
+      '<div class="publishing">' . $publishing_details . '</div>';
+
+// Create the Illiad OpenURL string.
+    $request = 'https://illiad.uncw.edu/illiad.dll?Action=10&Form=30&url_ver=Z39.88-2004&rfr_id=info%3Asid%2FBENTO&rft_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Abook&rft.genre=book&req_dat=%3Csessionid%3E&rfe_dat=%3Caccessionnumber%3E' . $oclc . '%3C%2Faccessionnumber%3E&rft_id=info%3Aoclcnum%2F' . $oclc . '&rft_id=urn%3AISBN%3A' . $isbn1 . '&rft.btitle=' . $title .  '&rft.date=' . $pub_date .  '&rft.au=' . $author . '&rft.isbn=' . $isbn1 . '&rft.genre=book&req_id=info:rfa/oclc/institutions/105484';
+
+// Links to other local libraries.
+    $nhcpl_search = 'http://srvlibweb.nhcgov.com/?config=pac#section=search&term=' . urlencode($search_terms);
+    $nhcpl_search = str_replace('%2B', '%20', $nhcpl_search);
+    $cfcc_search = 'http://encore.cfcc.edu/iii/encore_cfcc/search?lang=eng&target=' . urlencode($search_terms);
+    $cfcc_search = str_replace('%2B', '%20', $cfcc_search);
+
+// Present a link to Illiad request form and local libraries.
+    $display_part2 .= '<br/><a href="' . $request . '" target="_blank">Request Item through Interlibrary Loan</a><br/><br/>';
+    $display_part2 .= 'Check ' . '<a href="' . $nhcpl_search . '" target="_blank">New Hanover County Public Library</a> ';
+    $display_part2 .= 'or ' . '<a href="' . $cfcc_search . '" target="_blank">Cape Fear Community College</a>.<br/><br/>';
+    $oclc_matches++;
+  }     // end of loop through $rss->items
+
+  if ($oclc_matches) {
+    $display = $display_part1 . $display_part2;
+  }
+  else {
+    $display = 'No results found';
+  }
+
+  return $display;
+}
+
+/**
+ *
+ * Get the title string of a book/video/music item from the library catalog
+ * and modify it for display on the bento box page.  This involves removing
+ * all html tags, bracketed information indicating what type of resource it is,
+ * and the author information (which is separated from the title by a slash).
+ *
+ */
+function _bento_title_and_author($str) {
+  // First, remove all the tags from the title text.
+  $title_with_tags_removed = '';
+  $x = 0;
+  $character = '';
+  $char_is_inside_tags = FALSE;
+  $char_is_for_author = FALSE;
+  $str_length = strlen($str);
+  while ($x < $str_length) {
+    $character = substr($str, $x, 1);
+    if ($char_is_inside_tags) {
+      if ($character === '>') {
+        $char_is_inside_tags = FALSE;
+      }
+    }
+    else {
+      if ($character === '<') {
+        $char_is_inside_tags = TRUE;
+      }
+      else {
+        $title_with_tags_removed .= $character;
+      }
+    }
+    $x++;
+  }
+
+  // Then remove text inside of brackets, and everything after the last slash.
+  $title = '';
+  $author = '';
+  $x = 0;
+  $character = '';
+  $char_is_inside_brackets = FALSE;
+  $slash_count = substr_count($title_with_tags_removed, '/');
+  $slashes_found = 0;
+  $title_with_tags_removed_length = strlen($title_with_tags_removed);
+  while ($x < $title_with_tags_removed_length) {
+    $character = substr($title_with_tags_removed, $x, 1);
+    if ($char_is_for_author) {
+      $author .= $character;
+      $x++;
+      continue;
+    }
+    if ($char_is_inside_brackets) {
+      if ($character === '/') {
+        $slashes_found++;
+      }
+      if ($character === ']') {
+        $char_is_inside_brackets = FALSE;
+      }
+    }
+    else {
+      // The character is not inside brackets.
+      if ($character === '[') {
+        $char_is_inside_brackets = TRUE;
+      }
+      elseif ($character === '/') {
+        // Slashes are used to separate the title from the author.
+        // But only the last slash does this.  There may be other slashes
+        // that are part of the title.
+        $slashes_found++;
+        if ($slashes_found === $slash_count) {
+          $char_is_for_author = TRUE;
+        }
+        else {
+          $title .= $character;
+        }
+      }
+      else {
+        $title .= $character;
+      }
+    }
+    $x++;
+  }
+  $title_mod = str_replace('  ', ' ', $title);
+  $author_mod = trim($author);
+  return array('title' => $title_mod, 'author' => $author_mod);
+}
+
+function _bento_parse_author_publisher($record) {
+  $x = 0;
+  $record_length = strlen($record);
+  $looking_for_start = true;
+  $looking_for_end = false;
+  $author_publisher = '';
+  while ($x < $record_length - 13) {
+      if ($looking_for_start) {
+        $next = substr($record, $x, 5);
+        if ($next == '<br >') {
+          $looking_for_start = false;
+          $looking_for_end = true;
+          $x = $x + 5;
+        }
+        else {
+          $x++;
+        }
+      }
+      else if ($looking_for_end) {
+        $next = substr($record, $x, 5);
+        if ($next == '<br >') {
+          break;
+        }
+        else {
+          $author_publisher .= substr($record, $x, 1);
+          $x++;
+        }
+      }
+  }
+  return $author_publisher;
+}
+
+function bento_kiosk_page_structure() {
+  $system_pointer = '';
+  $display = '
+    <div id="page-catalog">
+      <h1 class="page-catalog-title">Search Randall Library</h1>
+      <div id="bento-search-box">
+        <form id="bento-search-form" accept-charset="UTF-8">
+          <div class="homesearch" style="text-align:center">
+          <input class="inputtext" id="bento-search" name="keyword" size="70" tabindex="1" type="text" value="Search Randall Library" />
+          <input alt="Go" class="submit" id="bento-search-button" name="wcsbtn2w" tabindex="2" title="Go" type="submit" value="Search" />&nbsp; &nbsp; &nbsp; &nbsp;&nbsp;
+          </div>
+        </form>
+      </div>
+
+      <div id="bento-results" class="hide">
+        <div id ="bento-results-books" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Books</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-books bento-results-columns bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+        </div>
+
+        <div id ="bento-results-videos" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Videos</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-videos bento-results-columns bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+        </div>
+
+        <div id ="bento-results-gov-docs" class="bento-results">
+          <div class="bento-results-header">
+            <h5>Government Documents</h5>
+          </div>
+          <div class="bento-results-content bento-results-content-gov-docs bento-results-columns bento-dynamic">
+            <img src="' . $system_pointer . '/sites/all/modules/bento/images/loading.gif"/>
+          </div>
+        </div>
+
+      </div>
+    </div>';
+  return $display;
+}
+
+// TESTING FUNCTIONS -----------------------------------------------------------
+
+function bento_test() {
+  $result = array('reply' => 'MESSAGE FROM BENTO_TEST', 'resultsCount' => 'X');
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}

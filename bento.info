@@ -1,0 +1,5 @@
+; $Id$
+name = Bento
+description = Retrieve search results and create bento box style display.
+package = UNCW Randall Library
+core = 7.x
