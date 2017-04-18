@@ -444,14 +444,12 @@ function bento_catalog_journals() {
   foreach ($messages as $message) {
     $nomatch_msg = $message->getElementsByTagName('td', 0)->plaintext;
     if (strpos($nomatch_msg, 'No matches found') !== false) {
-      $result = array('reply' => 'No results found');
-      drupal_json_output($result);
-      module_invoke_all('exit');
-      exit;
+      //No match was found using a title search so let's try the keword search
+      bento_catalog_journals_keyword();
     }
   }
 
-  // Get the total number of records.
+// Get the total number of records.
   $browse_header = $html->find('.browseHeaderData');
   if (count($browse_header)) {
     $browse_header_data = $browse_header[0] . '';
@@ -459,7 +457,7 @@ function bento_catalog_journals() {
     $total_records = rtrim($browse_header_array[7], ')');
   }
 
-// display search all link
+ // display search all link
   $display = '';
 
 //starting counter to limit to 3 results
@@ -482,6 +480,7 @@ function bento_catalog_journals() {
     $record_found = TRUE;
   }
 
+$single_record_found = FALSE;
 //if there were no results that must mean you only had one result so look for that information
   if (!$record_found) {
     $records = $html->find('.bibDisplayTitle');
@@ -490,10 +489,93 @@ function bento_catalog_journals() {
       $new_title_j = substr($title_j, 9, 999);
 
       $display .= '<div class="title"><a href="' . $base . $safe_search_terms . '"><b>' . $new_title_j . '</b></a></div>';
+      $single_record_found = TRUE;
+      $total_records = "1";
+    }
+  }
+
+//If a single record was not found or any regular records, that means that records were found, just in the other display so we have to search for .briefcitTitle instead
+//We do not need to reset the total here because the total is displayed the same way on both of these displays.
+  if (!$record_found && !$single_record_found) {
+    $records = $html->find('.briefcitTitle');
+    foreach ($records as $record) {
+      //break if you have already done 3 results
+      if (++$i == 4) {
+        break;
+      }
+      //title and link to first 3 results
+      $display .= '<div class="title"><a href="https://libcat.uncw.edu' .
+        $record->getElementsByTagName('a', 0)->href . '"><b>' .
+        $record->getElementsByTagName('a', 0)->plaintext;
+      $display .= "</b></div>";
+    }
+  }
+
+  $result = array('reply' => $display, 'resultsCount' => $total_records);
+
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
+
+function bento_catalog_journals_keyword() {
+  $search_terms = $_POST['searchTerms'];
+  $safe_search_terms = str_replace(' ', '%20', $search_terms);
+  $base = 'http://libcat.uncw.edu/search/X?SEARCH=%28';
+  $search_end = '%29&searchscope=4&SORT=D&m=s';
+  $html = file_get_html($base . $safe_search_terms . $search_end);
+  $records = $html->find('.briefcitTitle');
+  $total_records = count($records);
+
+//looking at the area that would say no matches found on a page
+  $no_matches_found = FALSE;
+  $messages = $html->find('.msg ');
+  foreach ($messages as $message) {
+    $nomatch_msg = $message->getElementsByTagName('td', 0)->plaintext;
+    if (strpos($nomatch_msg, 'No matches found') !== false) {
+      $result = array('reply' => 'No results found');
+      drupal_json_output($result);
+      module_invoke_all('exit');
+      exit;
+    }
+  }
+
+// display search all link
+  $display = '';
+
+//starting counter to limit to 3 results
+  $i = 0;
+
+//looking through results
+  $record_found = FALSE;
+  foreach ($records as $record) {
+
+//break if you have already done 3 results
+    if (++$i == 4) {
+      break;
+    }
+
+    //title and link to first 3 results
+    $display .= '<div class="title"><a href="https://libcat.uncw.edu' .
+      $record->getElementsByTagName('a', 0)->href . '"><b>' .
+      $record->getElementsByTagName('a', 0)->plaintext;
+    $display .= "</b></div>";
+    $record_found = TRUE;
+  }
+
+//if there were no results that must mean you only had one result so look for that information
+  if (!$record_found) {
+    $records = $html->find('.bibDisplayTitle');
+    foreach ($records as $record) {
+      $title_j = $record->getElementsByTagName('td', 0)->plaintext;
+      $new_title_j = substr($title_j, 9, 999);
+
+      $display .= '<div class="title"><a href="' . $base . $safe_search_terms . $search_end . '"><b>' . $new_title_j . '</b></a></div>';
     }
     $total_records = "1";
   }
-  $result = array('reply' => $display, 'resultsCount' => $total_records);
+
+  $result = array('reply' => $display, 'resultsCount' => $total_records, 'usedKeyWordSearch' => TRUE);
 
   // If no results, try the OCLC api.
   $resultsCount = $result['resultsCount'];
@@ -521,6 +603,8 @@ function bento_catalog_videos() {
   $media = 'videos';
   $results_count = 5;
   if ($touchkiosk) {
+    //Change search params for touchkiosk so that streaming videos are not displayed
+    $search_parameters = 'D&m=g&b=wa';
     $results_count = 4;
   }
   $show_jackets = TRUE;
@@ -532,6 +616,11 @@ function bento_catalog_videos() {
     $display = _bento_oclc_search_api($_POST['searchTerms'], 'videos');
     $result = array('reply' => $display, 'resultsCount' => 'X');
   }
+
+  drupal_json_output($result);
+  module_invoke_all('exit');
+  exit;
+}
 
   drupal_json_output($result);
   module_invoke_all('exit');

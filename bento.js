@@ -638,13 +638,18 @@
               if (results === '') {
                 results = 'No results found';
               }
+              var usedKeyWord = response.usedKeyWordSearch;
+              if (response.usedKeyWordSearch === '') {
+                var usedKeyWord = response.usedKeyWordSearch = false;
+              }
               if (results === 'No results found') {
                 var noResultsLink = 'http://libcat.uncw.edu/search/X?SEARCH=%28' + searchTerms + '%29&searchscope=4&SORT=D&m=s';
                 var noResults = 'No matching journal titles found. Try searching for <a href="' + noResultsLink + '" target= "_blank">journals by keyword</a>';
                 $('.bento-results-content-journals').html(noResults + ' or <a href="/ask" target="_blank">Ask Us!');
               }
               else {
-                var viewAll = 'http://libcat.uncw.edu/search/?searchtype=j&searcharg=' + searchTerms;
+                if (usedKeyWord === true) { var viewAll = 'http://libcat.uncw.edu/search/X?SEARCH=%28' + searchTerms + '%29&searchscope=4&SORT=D&m=s'; }
+                else { var viewAll = 'http://libcat.uncw.edu/search/?searchtype=j&searcharg=' + searchTerms; }
                 if (!isInArray(response.resultsCount, ['1', 'X'])) {
                   $("#bento-results-journals .bento-results-footer img.bento-see-all").attr("src", externalLink);
                   $("#bento-results-journals .bento-results-footer img.bento-more-options").attr("src", moreOptions);
